@@ -102,7 +102,7 @@ const FoodScanner = () => {
   };
 
   return (
-    <section className="min-h-screen py-20 px-4">
+    <section id="scanner" className="min-h-screen py-20 px-4">
       <div className="container max-w-4xl mx-auto">
         {/* Header */}
         <motion.div
