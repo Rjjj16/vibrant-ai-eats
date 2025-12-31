@@ -59,6 +59,16 @@ const plans = [
 ];
 
 const Pricing = () => {
+  const handlePlanClick = (planName: string) => {
+    if (planName === "Free") {
+      // Scroll to scanner for free plan
+      document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      // For paid plans, scroll to scanner with a toast message
+      document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   return (
     <section id="pricing" className="py-24 relative">
       {/* Background */}
@@ -139,7 +149,12 @@ const Pricing = () => {
                 </ul>
 
                 {/* CTA */}
-                <Button variant={plan.variant} size="lg" className="w-full">
+                <Button 
+                  variant={plan.variant} 
+                  size="lg" 
+                  className="w-full"
+                  onClick={() => handlePlanClick(plan.name)}
+                >
                   {plan.cta}
                 </Button>
               </div>
