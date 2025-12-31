@@ -45,11 +45,20 @@ const Hero = () => {
 
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-              <Button variant="gradient" size="lg" className="gap-2">
+              <Button 
+                variant="gradient" 
+                size="lg" 
+                className="gap-2"
+                onClick={() => document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth' })}
+              >
                 <Camera className="w-5 h-5" />
                 Start Scanning Free
               </Button>
-              <Button variant="outline" size="lg">
+              <Button 
+                variant="outline" 
+                size="lg"
+                onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })}
+              >
                 See How It Works
               </Button>
             </div>
@@ -153,7 +162,11 @@ const Hero = () => {
                     </div>
 
                     {/* Scan Button */}
-                    <Button variant="gradient" className="w-full rounded-2xl h-14 text-base gap-2">
+                    <Button 
+                      variant="gradient" 
+                      className="w-full rounded-2xl h-14 text-base gap-2"
+                      onClick={() => document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth' })}
+                    >
                       <Camera className="w-5 h-5" />
                       Scan Food
                     </Button>
