@@ -1,10 +1,13 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Camera, Upload, Loader2, X, RotateCcw, Sparkles } from "lucide-react";
+import { Camera, Upload, Loader2, X, RotateCcw, Sparkles, Lock, Crown } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+import MealSelector from "./MealSelector";
 
 interface FoodItem {
   name: string;
@@ -27,21 +30,44 @@ interface NutritionResult {
   notes: string;
 }
 
+interface ScanInfo {
+  currentCount: number;
+  limit: number;
+  plan: string;
+}
+
 const FoodScanner = () => {
   const [image, setImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [result, setResult] = useState<NutritionResult | null>(null);
+  const [scanInfo, setScanInfo] = useState<ScanInfo | null>(null);
+  const [showMealSelector, setShowMealSelector] = useState(false);
+  const [scanLimitReached, setScanLimitReached] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { user, refreshProfile } = useAuth();
+  const navigate = useNavigate();
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Check if user is logged in
+      if (!user) {
+        toast({
+          title: "Login Required",
+          description: "Please login to scan your food.",
+          variant: "destructive",
+        });
+        navigate('/auth');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setImage(reader.result as string);
         setResult(null);
+        setScanLimitReached(false);
       };
       reader.readAsDataURL(file);
     }
@@ -50,7 +76,19 @@ const FoodScanner = () => {
   const analyzeFood = async () => {
     if (!image) return;
 
+    if (!user) {
+      toast({
+        title: "Login Required",
+        description: "Please login to analyze your food.",
+        variant: "destructive",
+      });
+      navigate('/auth');
+      return;
+    }
+
     setIsAnalyzing(true);
+    setScanLimitReached(false);
+
     try {
       const { data, error } = await supabase.functions.invoke("analyze-food", {
         body: { imageBase64: image },
@@ -60,12 +98,36 @@ const FoodScanner = () => {
         throw error;
       }
 
+      // Check for scan limit error
+      if (data.error === "scan_limit_reached") {
+        setScanLimitReached(true);
+        setScanInfo({
+          currentCount: data.currentCount,
+          limit: data.limit,
+          plan: data.plan,
+        });
+        toast({
+          title: "Scan Limit Reached",
+          description: data.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (data.success) {
         setResult(data.data);
+        setScanInfo(data.scanInfo);
+        
+        // Refresh profile to get updated scan count
+        await refreshProfile();
+
         toast({
           title: "Analysis Complete!",
           description: `Found ${data.data.foods.length} food item(s)`,
         });
+
+        // Show meal selector after successful scan
+        setShowMealSelector(true);
       } else {
         throw new Error(data.error || "Failed to analyze food");
       }
@@ -84,6 +146,8 @@ const FoodScanner = () => {
   const reset = () => {
     setImage(null);
     setResult(null);
+    setScanInfo(null);
+    setScanLimitReached(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
@@ -99,6 +163,10 @@ const FoodScanner = () => {
       default:
         return "text-muted-foreground";
     }
+  };
+
+  const handleUpgradeClick = () => {
+    document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
@@ -120,11 +188,69 @@ const FoodScanner = () => {
           <p className="text-muted-foreground max-w-md mx-auto">
             Upload or take a photo of your meal to get instant nutritional breakdown
           </p>
+          
+          {/* Login prompt for non-authenticated users */}
+          {!user && (
+            <div className="mt-6 p-4 bg-primary/10 rounded-xl border border-primary/20 max-w-md mx-auto">
+              <div className="flex items-center gap-3">
+                <Lock className="w-5 h-5 text-primary" />
+                <div className="text-left">
+                  <p className="font-medium text-foreground">Login to Start Scanning</p>
+                  <p className="text-sm text-muted-foreground">Free users get 3 scans per day</p>
+                </div>
+              </div>
+              <Button 
+                variant="gradient" 
+                className="w-full mt-3"
+                onClick={() => navigate('/auth')}
+              >
+                Login to Scan
+              </Button>
+            </div>
+          )}
+
+          {/* Scan count indicator for authenticated users */}
+          {user && scanInfo && (
+            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-muted text-sm">
+              <span className="text-muted-foreground">Today's scans:</span>
+              <span className="font-bold text-foreground">
+                {scanInfo.currentCount}/{scanInfo.plan === 'pro' ? '∞' : scanInfo.limit}
+              </span>
+            </div>
+          )}
         </motion.div>
+
+        {/* Scan Limit Reached UI */}
+        {scanLimitReached && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-8"
+          >
+            <Card className="p-6 bg-destructive/10 border-destructive/20 text-center">
+              <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
+                <Crown className="w-8 h-8 text-destructive" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground mb-2">Daily Limit Reached</h3>
+              <p className="text-muted-foreground mb-4">
+                You've used all {scanInfo?.limit} scans for today on your {scanInfo?.plan} plan.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button variant="gradient" onClick={handleUpgradeClick}>
+                  <Crown className="w-4 h-4 mr-2" />
+                  Upgrade for More Scans
+                </Button>
+                <Button variant="outline" onClick={reset}>
+                  Try Again Tomorrow
+                </Button>
+              </div>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Upload Area */}
         <AnimatePresence mode="wait">
-          {!image ? (
+          {!image && !scanLimitReached ? (
             <motion.div
               key="upload"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -132,13 +258,14 @@ const FoodScanner = () => {
               exit={{ opacity: 0, scale: 0.95 }}
               className="space-y-4"
             >
-              <Card className="relative border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer p-12">
+              <Card className={`relative border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors ${user ? 'cursor-pointer' : 'opacity-50'} p-12`}>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
                   onChange={handleImageUpload}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  className={`absolute inset-0 w-full h-full opacity-0 ${user ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                  disabled={!user}
                 />
                 <div className="text-center">
                   <div className="w-20 h-20 rounded-full gradient-primary flex items-center justify-center mx-auto mb-4">
@@ -146,7 +273,7 @@ const FoodScanner = () => {
                   </div>
                   <p className="text-lg font-semibold mb-2">Upload Food Photo</p>
                   <p className="text-sm text-muted-foreground">
-                    Drag & drop or click to select an image
+                    {user ? "Drag & drop or click to select an image" : "Login to upload photos"}
                   </p>
                 </div>
               </Card>
@@ -157,14 +284,15 @@ const FoodScanner = () => {
                 <div className="flex-1 h-px bg-border" />
               </div>
 
-              <Card className="relative bg-accent/10 hover:bg-accent/20 transition-colors cursor-pointer p-8">
+              <Card className={`relative bg-accent/10 hover:bg-accent/20 transition-colors ${user ? 'cursor-pointer' : 'opacity-50'} p-8`}>
                 <input
                   ref={cameraInputRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
                   onChange={handleImageUpload}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  className={`absolute inset-0 w-full h-full opacity-0 ${user ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                  disabled={!user}
                 />
                 <div className="text-center">
                   <div className="w-16 h-16 rounded-full bg-accent/20 flex items-center justify-center mx-auto mb-3">
@@ -172,12 +300,12 @@ const FoodScanner = () => {
                   </div>
                   <p className="font-semibold">Take a Photo</p>
                   <p className="text-sm text-muted-foreground">
-                    Use your camera to capture food
+                    {user ? "Use your camera to capture food" : "Login to use camera"}
                   </p>
                 </div>
               </Card>
             </motion.div>
-          ) : (
+          ) : image && !scanLimitReached ? (
             <motion.div
               key="preview"
               initial={{ opacity: 0, scale: 0.95 }}
@@ -333,6 +461,19 @@ const FoodScanner = () => {
                     </div>
                   </Card>
 
+                  {/* Add to Meal CTA */}
+                  <Card className="p-4 bg-primary/10 border-primary/20">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-foreground">Save this meal?</p>
+                        <p className="text-sm text-muted-foreground">Track your daily intake</p>
+                      </div>
+                      <Button variant="gradient" onClick={() => setShowMealSelector(true)}>
+                        Add to Meal
+                      </Button>
+                    </div>
+                  </Card>
+
                   {/* Food Items */}
                   <Card className="p-6">
                     <h3 className="text-lg font-semibold mb-4">
@@ -392,9 +533,21 @@ const FoodScanner = () => {
                 </motion.div>
               )}
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
+
+      {/* Meal Selector Modal */}
+      {result && (
+        <MealSelector
+          isOpen={showMealSelector}
+          onClose={() => setShowMealSelector(false)}
+          nutritionData={result}
+          onSuccess={() => {
+            refreshProfile();
+          }}
+        />
+      )}
     </section>
   );
 };
