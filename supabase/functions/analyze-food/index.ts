@@ -1,8 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+// Plan limits
+const PLAN_LIMITS: Record<string, number> = {
+  free: 3,
+  basic: 20,
+  pro: 999999,
 };
 
 serve(async (req) => {
@@ -13,6 +21,8 @@ serve(async (req) => {
   try {
     const { imageBase64 } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
@@ -21,6 +31,68 @@ serve(async (req) => {
     if (!imageBase64) {
       throw new Error("No image provided");
     }
+
+    // Get user from auth header
+    const authHeader = req.headers.get("Authorization");
+    let userId: string | null = null;
+    let userPlan = "free";
+    let dailyScanCount = 0;
+
+    if (authHeader && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: authHeader } }
+      });
+
+      // Get user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (user && !userError) {
+        userId = user.id;
+
+        // Get user profile with plan info
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("plan, daily_scan_count, last_scan_date")
+          .eq("id", userId)
+          .single();
+
+        if (profile && !profileError) {
+          userPlan = profile.plan || "free";
+          
+          // Check if we need to reset the count (new day)
+          const today = new Date().toISOString().split("T")[0];
+          const lastScanDate = profile.last_scan_date;
+          
+          if (lastScanDate !== today) {
+            dailyScanCount = 0;
+          } else {
+            dailyScanCount = profile.daily_scan_count || 0;
+          }
+
+          // Check scan limit
+          const limit = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
+          
+          if (dailyScanCount >= limit) {
+            console.log(`User ${userId} has reached scan limit: ${dailyScanCount}/${limit}`);
+            return new Response(
+              JSON.stringify({ 
+                success: false,
+                error: "scan_limit_reached",
+                message: `You've reached your daily scan limit (${limit} scans). Upgrade your plan for more scans!`,
+                currentCount: dailyScanCount,
+                limit: limit,
+                plan: userPlan
+              }),
+              { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+      }
+    }
+
+    // Proceed with AI analysis
+    console.log(`Analyzing food for user ${userId || "anonymous"}, plan: ${userPlan}, scans: ${dailyScanCount}`);
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -108,7 +180,6 @@ If you cannot identify the food clearly, still provide your best estimate and se
     // Parse the JSON response, handling potential markdown code blocks
     let nutritionData;
     try {
-      // Remove potential markdown code blocks
       let cleanContent = content.trim();
       if (cleanContent.startsWith("```json")) {
         cleanContent = cleanContent.slice(7);
@@ -124,8 +195,41 @@ If you cannot identify the food clearly, still provide your best estimate and se
       throw new Error("Failed to parse nutrition data");
     }
 
+    // Update scan count for authenticated users
+    if (userId && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: authHeader! } }
+      });
+
+      const today = new Date().toISOString().split("T")[0];
+      
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          daily_scan_count: dailyScanCount + 1,
+          last_scan_date: today,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", userId);
+
+      if (updateError) {
+        console.error("Error updating scan count:", updateError);
+      } else {
+        console.log(`Updated scan count for user ${userId}: ${dailyScanCount + 1}`);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ success: true, data: nutritionData }),
+      JSON.stringify({ 
+        success: true, 
+        data: nutritionData,
+        scanInfo: {
+          currentCount: dailyScanCount + 1,
+          limit: PLAN_LIMITS[userPlan] || PLAN_LIMITS.free,
+          plan: userPlan
+        }
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

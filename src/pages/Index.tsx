@@ -5,13 +5,18 @@ import Features from "@/components/Features";
 import HowItWorks from "@/components/HowItWorks";
 import Pricing from "@/components/Pricing";
 import Footer from "@/components/Footer";
+import DailyProgress from "@/components/DailyProgress";
+import { useAuth } from "@/hooks/useAuth";
 
 const Index = () => {
+  const { user } = useAuth();
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main>
         <Hero />
+        {user && <DailyProgress />}
         <FoodScanner />
         <Features />
         <HowItWorks />

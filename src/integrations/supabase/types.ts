@@ -14,13 +14,100 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      food_logs: {
+        Row: {
+          calories: number
+          carbs: number
+          confidence: string | null
+          created_at: string
+          fat: number
+          fiber: number
+          food_name: string
+          id: string
+          image_url: string | null
+          logged_at: string
+          meal_type: string
+          notes: string | null
+          protein: number
+          serving_size: string | null
+          user_id: string
+        }
+        Insert: {
+          calories?: number
+          carbs?: number
+          confidence?: string | null
+          created_at?: string
+          fat?: number
+          fiber?: number
+          food_name: string
+          id?: string
+          image_url?: string | null
+          logged_at?: string
+          meal_type: string
+          notes?: string | null
+          protein?: number
+          serving_size?: string | null
+          user_id: string
+        }
+        Update: {
+          calories?: number
+          carbs?: number
+          confidence?: string | null
+          created_at?: string
+          fat?: number
+          fiber?: number
+          food_name?: string
+          id?: string
+          image_url?: string | null
+          logged_at?: string
+          meal_type?: string
+          notes?: string | null
+          protein?: number
+          serving_size?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          daily_scan_count: number
+          email: string | null
+          full_name: string | null
+          id: string
+          last_scan_date: string | null
+          plan: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          daily_scan_count?: number
+          email?: string | null
+          full_name?: string | null
+          id: string
+          last_scan_date?: string | null
+          plan?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          daily_scan_count?: number
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          last_scan_date?: string | null
+          plan?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_scan_limit: { Args: { p_user_id: string }; Returns: Json }
+      increment_scan_count: { Args: { p_user_id: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
