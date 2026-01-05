@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Sparkles, User, LogOut, Crown } from "lucide-react";
+import { Sparkles, User, LogOut, Crown, Calendar } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
@@ -84,6 +84,14 @@ const Header = () => {
                     {user.email}
                   </p>
                 </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="cursor-pointer"
+                  onClick={() => navigate('/history')}
+                >
+                  <Calendar className="w-4 h-4 mr-2" />
+                  Meal History
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {profile && (
                   <div className="px-3 py-2">
