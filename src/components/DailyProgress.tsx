@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { motion } from 'framer-motion';
-import { Coffee, Sun, Sunset, Cookie, Flame, Beef, Wheat, Droplet, TrendingUp } from 'lucide-react';
+import { Coffee, Sun, Sunset, Cookie, Flame, Beef, Wheat, Droplet, TrendingUp, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { Button } from '@/components/ui/button';
 
 interface MealSummary {
   meal_type: string;
@@ -42,16 +43,25 @@ const GOALS = {
   fat: 65,
 };
 
-const DailyProgress = () => {
+export interface DailyProgressHandle {
+  refresh: () => Promise<void>;
+}
+
+const DailyProgress = forwardRef<DailyProgressHandle>((_, ref) => {
   const [meals, setMeals] = useState<MealSummary[]>([]);
   const [totals, setTotals] = useState<DailyTotals>({ calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
 
-  const fetchTodaysMeals = async () => {
+  const fetchTodaysMeals = useCallback(async (showRefreshIndicator = false) => {
     if (!user) {
       setLoading(false);
       return;
+    }
+
+    if (showRefreshIndicator) {
+      setRefreshing(true);
     }
 
     try {
@@ -62,12 +72,15 @@ const DailyProgress = () => {
         .from('food_logs')
         .select('*')
         .eq('user_id', user.id)
-        .gte('logged_at', today.toISOString());
+        .gte('logged_at', today.toISOString())
+        .order('logged_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching meals:', error);
         return;
       }
+
+      console.log('Fetched food logs:', data);
 
       // Group by meal type
       const mealMap = new Map<string, MealSummary>();
@@ -103,18 +116,48 @@ const DailyProgress = () => {
       console.error('Error:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [user]);
+
+  // Expose refresh method via ref
+  useImperativeHandle(ref, () => ({
+    refresh: () => fetchTodaysMeals(true),
+  }));
 
   useEffect(() => {
     fetchTodaysMeals();
-  }, [user]);
+  }, [fetchTodaysMeals]);
+
+  // Set up real-time subscription
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('food_logs_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'food_logs',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log('Food log change:', payload);
+          fetchTodaysMeals();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchTodaysMeals]);
 
   if (!user) {
     return null;
   }
-
-  const getProgress = (current: number, goal: number) => Math.min((current / goal) * 100, 100);
 
   return (
     <section className="py-12 px-4">
@@ -137,6 +180,14 @@ const DailyProgress = () => {
                 </p>
               </div>
             </div>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={() => fetchTodaysMeals(true)}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
 
           {loading ? (
@@ -227,7 +278,9 @@ const DailyProgress = () => {
       </div>
     </section>
   );
-};
+});
+
+DailyProgress.displayName = 'DailyProgress';
 
 interface MacroProgressProps {
   icon: typeof Flame;
