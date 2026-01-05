@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, forwardRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Coffee, Sun, Sunset, Cookie, X, Plus } from 'lucide-react';
+import { Coffee, Sun, Sunset, Cookie, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -41,6 +41,85 @@ const mealTypes = [
   { id: 'snacks', label: 'Snacks', icon: Cookie, color: 'from-blue-500 to-cyan-500' },
 ];
 
+const MealSelectorContent = forwardRef<HTMLDivElement, MealSelectorProps & { onMealSelect: (mealType: string) => Promise<void>; isLoading: boolean; selectedMeal: string | null }>(
+  ({ onClose, nutritionData, onMealSelect, isLoading, selectedMeal }, ref) => {
+    return (
+      <motion.div
+        ref={ref}
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-foreground">Add to Meal</h3>
+            <p className="text-sm text-muted-foreground">
+              {nutritionData.totalCalories} cal • {nutritionData.foods.length} item(s)
+            </p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} disabled={isLoading}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        {/* Food summary */}
+        <div className="bg-muted/50 rounded-xl p-4 mb-6">
+          <p className="text-sm font-medium text-foreground mb-2">Foods detected:</p>
+          <div className="flex flex-wrap gap-2">
+            {nutritionData.foods.map((food, index) => (
+              <span
+                key={index}
+                className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full"
+              >
+                {food.name}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Meal type buttons */}
+        <div className="grid grid-cols-2 gap-3">
+          {mealTypes.map((meal) => (
+            <Button
+              key={meal.id}
+              variant="outline"
+              className="h-auto py-4 flex flex-col items-center gap-2 hover:bg-muted transition-all"
+              disabled={isLoading}
+              onClick={() => onMealSelect(meal.id)}
+            >
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meal.color} flex items-center justify-center`}>
+                {isLoading && selectedMeal === meal.id ? (
+                  <Loader2 className="w-5 h-5 text-white animate-spin" />
+                ) : (
+                  <meal.icon className="w-5 h-5 text-white" />
+                )}
+              </div>
+              <span className="font-medium">
+                {isLoading && selectedMeal === meal.id ? 'Saving...' : meal.label}
+              </span>
+            </Button>
+          ))}
+        </div>
+
+        {/* Skip button */}
+        <Button
+          variant="ghost"
+          className="w-full mt-4 text-muted-foreground"
+          onClick={onClose}
+          disabled={isLoading}
+        >
+          Skip for now
+        </Button>
+      </motion.div>
+    );
+  }
+);
+
+MealSelectorContent.displayName = 'MealSelectorContent';
+
 const MealSelector = ({ isOpen, onClose, nutritionData, onSuccess }: MealSelectorProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<string | null>(null);
@@ -76,30 +155,32 @@ const MealSelector = ({ isOpen, onClose, nutritionData, onSuccess }: MealSelecto
         notes: nutritionData.notes,
       }));
 
-      const { error } = await supabase
+      console.log('Saving food logs:', foodLogs);
+
+      const { data, error } = await supabase
         .from('food_logs')
-        .insert(foodLogs);
+        .insert(foodLogs)
+        .select();
 
       if (error) {
         console.error('Error saving food log:', error);
-        toast({
-          title: 'Failed to save',
-          description: 'Could not save your meal. Please try again.',
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Meal saved!',
-          description: `Added ${nutritionData.foods.length} item(s) to ${mealType}.`,
-        });
-        onSuccess();
-        onClose();
+        throw error;
       }
+
+      console.log('Food logs saved:', data);
+
+      toast({
+        title: 'Meal saved!',
+        description: `Added ${nutritionData.foods.length} item(s) to ${mealType}.`,
+      });
+      
+      onSuccess();
+      onClose();
     } catch (err) {
       console.error('Error:', err);
       toast({
-        title: 'Error',
-        description: 'Something went wrong. Please try again.',
+        title: 'Failed to save',
+        description: err instanceof Error ? err.message : 'Could not save your meal. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -112,79 +193,25 @@ const MealSelector = ({ isOpen, onClose, nutritionData, onSuccess }: MealSelecto
 
   return (
     <AnimatePresence>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      >
+      {isOpen && (
         <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={onClose}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-xl font-bold text-foreground">Add to Meal</h3>
-              <p className="text-sm text-muted-foreground">
-                {nutritionData.totalCalories} cal • {nutritionData.foods.length} item(s)
-              </p>
-            </div>
-            <Button variant="ghost" size="icon" onClick={onClose}>
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-
-          {/* Food summary */}
-          <div className="bg-muted/50 rounded-xl p-4 mb-6">
-            <p className="text-sm font-medium text-foreground mb-2">Foods detected:</p>
-            <div className="flex flex-wrap gap-2">
-              {nutritionData.foods.map((food, index) => (
-                <span
-                  key={index}
-                  className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full"
-                >
-                  {food.name}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Meal type buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            {mealTypes.map((meal) => (
-              <Button
-                key={meal.id}
-                variant="outline"
-                className="h-auto py-4 flex flex-col items-center gap-2 hover:bg-muted transition-all"
-                disabled={isLoading}
-                onClick={() => handleAddToMeal(meal.id)}
-              >
-                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${meal.color} flex items-center justify-center`}>
-                  <meal.icon className="w-5 h-5 text-white" />
-                </div>
-                <span className="font-medium">
-                  {isLoading && selectedMeal === meal.id ? 'Saving...' : meal.label}
-                </span>
-              </Button>
-            ))}
-          </div>
-
-          {/* Skip button */}
-          <Button
-            variant="ghost"
-            className="w-full mt-4 text-muted-foreground"
-            onClick={onClose}
-            disabled={isLoading}
-          >
-            Skip for now
-          </Button>
+          <MealSelectorContent
+            isOpen={isOpen}
+            onClose={onClose}
+            nutritionData={nutritionData}
+            onSuccess={onSuccess}
+            onMealSelect={handleAddToMeal}
+            isLoading={isLoading}
+            selectedMeal={selectedMeal}
+          />
         </motion.div>
-      </motion.div>
+      )}
     </AnimatePresence>
   );
 };
