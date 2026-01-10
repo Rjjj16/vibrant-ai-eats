@@ -20,12 +20,16 @@ serve(async (req) => {
 
   try {
     const { imageBase64 } = await req.json();
+    // Use GEMINI_API_KEY for independent deployment, fallback to LOVABLE_API_KEY for Lovable Cloud
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const useGeminiDirect = !!GEMINI_API_KEY;
+    
+    if (!GEMINI_API_KEY && !LOVABLE_API_KEY) {
+      throw new Error("Either GEMINI_API_KEY or LOVABLE_API_KEY must be configured");
     }
 
     if (!imageBase64) {
@@ -94,19 +98,85 @@ serve(async (req) => {
     // Proceed with AI analysis
     console.log(`Analyzing food for user ${userId || "anonymous"}, plan: ${userPlan}, scans: ${dailyScanCount}`);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          {
-            role: "system",
-            content: `You are a nutrition analysis AI. Analyze food images and provide accurate nutritional information.
-            
+    let response;
+    
+    if (useGeminiDirect) {
+      // Direct Google Gemini API call
+      console.log("Using direct Gemini API");
+      
+      const imageData = imageBase64.startsWith("data:") 
+        ? imageBase64.split(",")[1] 
+        : imageBase64;
+      
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are a nutrition analysis AI. Analyze this food image and provide accurate nutritional information.
+                  
+You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no explanations) in this exact format:
+{
+  "foods": [
+    {
+      "name": "Food name",
+      "calories": number,
+      "protein": number (in grams),
+      "carbs": number (in grams),
+      "fat": number (in grams),
+      "fiber": number (in grams),
+      "servingSize": "estimated serving size"
+    }
+  ],
+  "totalCalories": number,
+  "totalProtein": number,
+  "totalCarbs": number,
+  "totalFat": number,
+  "totalFiber": number,
+  "confidence": "high" | "medium" | "low",
+  "notes": "Any relevant notes about the food or estimation"
+}
+
+Be accurate with Indian cuisine items like dal, roti, rice dishes, curries, etc.
+If you cannot identify the food clearly, still provide your best estimate and set confidence to "low".`
+                },
+                {
+                  inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imageData
+                  }
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 1024,
+          }
+        }),
+      });
+    } else {
+      // Lovable AI Gateway call (for Lovable Cloud deployment)
+      console.log("Using Lovable AI Gateway");
+      
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: `You are a nutrition analysis AI. Analyze food images and provide accurate nutritional information.
+              
 When you receive a food image, identify the food items and estimate their nutritional content.
 You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no explanations) in this exact format:
 {
@@ -132,25 +202,26 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no 
 
 Be accurate with Indian cuisine items like dal, roti, rice dishes, curries, etc.
 If you cannot identify the food clearly, still provide your best estimate and set confidence to "low".`
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Analyze this food image and provide nutritional information. Respond with ONLY the JSON object, no other text."
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageBase64.startsWith("data:") ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "Analyze this food image and provide nutritional information. Respond with ONLY the JSON object, no other text."
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: imageBase64.startsWith("data:") ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`
+                  }
                 }
-              }
-            ]
-          }
-        ],
-      }),
-    });
+              ]
+            }
+          ],
+        }),
+      });
+    }
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -171,9 +242,19 @@ If you cannot identify the food clearly, still provide your best estimate and se
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    
+    // Handle different response formats (Gemini direct vs Lovable Gateway)
+    let content: string;
+    if (useGeminiDirect) {
+      // Gemini API response format
+      content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    } else {
+      // OpenAI-compatible format (Lovable Gateway)
+      content = data.choices?.[0]?.message?.content;
+    }
 
     if (!content) {
+      console.error("No content in response:", JSON.stringify(data));
       throw new Error("No response from AI");
     }
 
