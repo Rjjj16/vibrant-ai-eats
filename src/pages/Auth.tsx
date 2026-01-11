@@ -149,7 +149,7 @@ const Auth = () => {
             <div className="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center">
               <Utensils className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold text-foreground">NutriScan</span>
+            <span className="text-xl font-bold text-foreground">AI Food Calorie</span>
           </div>
 
           {/* Title */}

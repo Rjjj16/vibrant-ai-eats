@@ -45,7 +45,7 @@ const Header = () => {
             <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="text-xl font-bold font-display">
-            AI <span className="gradient-text">Calorie</span>
+            AI Food <span className="gradient-text">Calorie</span>
           </span>
         </a>
 

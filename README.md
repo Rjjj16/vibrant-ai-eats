@@ -1,4 +1,4 @@
-# Vibrant AI Eats - Food Scanner App
+# AI Food Calorie - Food Scanner App
 
 A nutrition tracking app that uses AI to analyze food images and log daily meals.
 

@@ -54,7 +54,7 @@ const HowItWorks = () => {
             Simple Process
           </span>
           <h2 className="text-3xl md:text-4xl font-bold font-display mb-4">
-            How <span className="gradient-text">AI Calorie</span> Works
+            How <span className="gradient-text">AI Food Calorie</span> Works
           </h2>
           <p className="text-lg text-muted-foreground">
             From photo to nutrition facts in seconds. It's that simple.
