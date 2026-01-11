@@ -21,11 +21,15 @@ serve(async (req) => {
   try {
     const { imageBase64 } = await req.json();
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
     
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY must be configured");
+    // Use GEMINI_API_KEY if available (for independent deployment), otherwise fall back to LOVABLE_API_KEY
+    const useDirectGemini = !!GEMINI_API_KEY;
+    
+    if (!GEMINI_API_KEY && !LOVABLE_API_KEY) {
+      throw new Error("Either GEMINI_API_KEY or LOVABLE_API_KEY must be configured");
     }
 
     if (!imageBase64) {
@@ -98,18 +102,22 @@ serve(async (req) => {
       ? imageBase64.split(",")[1] 
       : imageBase64;
     
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: `You are a nutrition analysis AI. Analyze this food image and provide accurate nutritional information.
-                
+    let response;
+    
+    if (useDirectGemini) {
+      // Direct Google Gemini API call (for independent deployment with GEMINI_API_KEY)
+      response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are a nutrition analysis AI. Analyze this food image and provide accurate nutritional information.
+                  
 You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no explanations) in this exact format:
 {
   "foods": [
@@ -134,22 +142,77 @@ You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no 
 
 Be accurate with Indian cuisine items like dal, roti, rice dishes, curries, etc.
 If you cannot identify the food clearly, still provide your best estimate and set confidence to "low".`
-              },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: imageData
+                },
+                {
+                  inline_data: {
+                    mime_type: "image/jpeg",
+                    data: imageData
+                  }
                 }
-              }
-            ]
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.4,
+            maxOutputTokens: 1024,
           }
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 1024,
-        }
-      }),
-    });
+        }),
+      });
+    } else {
+      // Lovable AI Gateway call (for Lovable Cloud deployment)
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: `You are a nutrition analysis AI. Analyze this food image and provide accurate nutritional information.
+                  
+You MUST respond with ONLY a valid JSON object (no markdown, no code blocks, no explanations) in this exact format:
+{
+  "foods": [
+    {
+      "name": "Food name",
+      "calories": number,
+      "protein": number (in grams),
+      "carbs": number (in grams),
+      "fat": number (in grams),
+      "fiber": number (in grams),
+      "servingSize": "estimated serving size"
+    }
+  ],
+  "totalCalories": number,
+  "totalProtein": number,
+  "totalCarbs": number,
+  "totalFat": number,
+  "totalFiber": number,
+  "confidence": "high" | "medium" | "low",
+  "notes": "Any relevant notes about the food or estimation"
+}
+
+Be accurate with Indian cuisine items like dal, roti, rice dishes, curries, etc.
+If you cannot identify the food clearly, still provide your best estimate and set confidence to "low".`
+                },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageData}`
+                  }
+                }
+              ]
+            }
+          ]
+        }),
+      });
+    }
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -170,7 +233,16 @@ If you cannot identify the food clearly, still provide your best estimate and se
     }
 
     const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    // Handle different response formats
+    let content: string | undefined;
+    if (useDirectGemini) {
+      // Direct Gemini API response format
+      content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    } else {
+      // Lovable AI Gateway (OpenAI-compatible) response format
+      content = data.choices?.[0]?.message?.content;
+    }
 
     if (!content) {
       console.error("No content in response:", JSON.stringify(data));
