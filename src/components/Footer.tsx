@@ -12,7 +12,7 @@ const Footer = () => {
                 <Sparkles className="w-5 h-5 text-primary-foreground" />
               </div>
               <span className="text-xl font-bold font-display">
-                AI <span className="gradient-text">Calorie</span>
+                AI Food <span className="gradient-text">Calorie</span>
               </span>
             </a>
             <p className="text-sm text-muted-foreground mb-4">
@@ -71,7 +71,7 @@ const Footer = () => {
         {/* Bottom */}
         <div className="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            © 2024 AI Calorie. All rights reserved.
+            © 2024 AI Food Calorie. All rights reserved.
           </p>
           <p className="text-sm text-muted-foreground">
             Made with ❤️ for healthy living
